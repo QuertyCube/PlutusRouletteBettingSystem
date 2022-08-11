@@ -94,6 +94,7 @@ data GiveParams = GiveParams
 type VestingSchema =
             Endpoint "lock" Integer
         .\/ Endpoint "bet" BetParams
+        .\/ Endpoint "grab" ()
 
 lock :: AsContractError e => Integer -> Contract w s e ()
 lock gp = do
@@ -170,6 +171,24 @@ bet (BetParams theBet a) = do
                 Nothing -> traceError "Unknown datum type"
                 Just d  -> d
 
+grab :: forall w s e. AsContractError e => Contract w s e ()
+grab = do
+    utxos <- utxosAt scrAddress
+    if Map.null utxos
+        then logInfo @String $ "no gifts available"
+        else do
+            let orefs   = fst <$> Map.toList utxos
+                lookups = Constraints.unspentOutputs utxos  <>
+                          Constraints.otherScript validator
+                tx :: TxConstraints Void Void
+                tx      = mconcat [Constraints.mustSpendScriptOutput oref unitRedeemer | oref <- orefs]
+            ledgerTx <- submitTxConstraintsWith @Void lookups tx
+            void $ awaitTxConfirmed $ getCardanoTxId ledgerTx
+            logInfo @String $ "collected gifts"
+
+
+
+
 boolFromIO :: IO Bool -> Bool
 boolFromIO = boolFromIO
 
@@ -179,10 +198,11 @@ mencariHasil a = boolFromIO (inputBetValue a)
 
 
 endpoints ::   Contract () VestingSchema Text ()
-endpoints = awaitPromise (lock' `select` bet') >> endpoints
+endpoints = awaitPromise (lock' `select` bet' `select` grab') >> endpoints
   where
     lock' = endpoint @"lock" lock
     bet' = endpoint @"bet" bet
+    grab' = endpoint @"grab" $ const grab
 
 -- mkSchemaDefinitions ''VestingSchema
 
@@ -213,4 +233,7 @@ myTrace = do
       { yourBetValue = "2"
       , amountt   = 1000000
       }
+    void $ Emulator.waitNSlots 5
+
+    callEndpoint @"grab" h1 $ ()
     void $ Emulator.waitNSlots 5
