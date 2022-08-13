@@ -9,3 +9,5 @@
 on folder week04/src/Week04
 - PlutusRolet.hs is the Plutus Contract
 - RoletPureLogic.hs is the logic of the roullet the will return Bool that used on PlutusRolet.hs
+
+![alt text](https://github.com/QuertyCube/PlutusRouletteBettingSystem/blob/main/Schema%20of%20the%20system.png?raw=true)
