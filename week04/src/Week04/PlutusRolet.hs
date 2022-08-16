@@ -44,8 +44,10 @@ import Plutus.Contract.Test
 import Ledger.TimeSlot
 
 
+
+
 data TheDatum = TheDatum
-    { famount    :: Integer
+    { owner    :: PaymentPubKeyHash
     , amount      :: Integer
     } deriving Show
 
@@ -53,13 +55,13 @@ PlutusTx.unstableMakeIsData ''TheDatum
 
 {-# INLINABLE mkValidator #-}
 mkValidator :: TheDatum -> () -> ScriptContext -> Bool
-mkValidator dat () ctx = traceIfFalse "It now False, cause it already True on Off-Chain" isthatTrue
+mkValidator dat () ctx = traceIfFalse "It now False, cause it already True on Off-Chain. If amout not 0" isthatTrue
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
 
     isthatTrue :: Bool
-    isthatTrue = True
+    isthatTrue = (amount dat) > 0
 
 data Vesting
 instance Scripts.ValidatorTypes Vesting where
@@ -87,7 +89,7 @@ scrAddress :: Ledger.Address
 scrAddress = scriptAddress validator
 
 data GiveParams = GiveParams
-    { dpFamount    :: !Integer
+    { gpOwner    :: !PaymentPubKeyHash
     , gpAmount      :: !Integer
     } deriving (Generic, ToJSON, FromJSON, ToSchema)
 
@@ -98,9 +100,10 @@ type VestingSchema =
 
 lock :: AsContractError e => Integer -> Contract w s e ()
 lock gp = do
+    pkh   <- ownPaymentPubKeyHash
     let dat = TheDatum
-                { famount    = gp
-                , amount      = gp
+                { owner = pkh
+                , amount  = gp
                 }
         tx  = Constraints.mustPayToTheScript dat $ Ada.lovelaceValueOf $ gp
     ledgerTx <- submitTxConstraints typedValidator tx
@@ -135,7 +138,7 @@ bet (BetParams theBet a) = do
                         d = getDatum $ snd utxo
                         remainder = amount d - a
                         dat = TheDatum 
-                                { famount    = remainder
+                                { owner    = owner d
                                 , amount      = remainder
                                 }
                         tx = Constraints.mustPayToTheScript dat (Ada.lovelaceValueOf remainder) <>
@@ -154,7 +157,7 @@ bet (BetParams theBet a) = do
                         d = getDatum $ snd utxo
                         remainder = amount d + a
                         dat = TheDatum 
-                                { famount    = remainder
+                                { owner    = owner d
                                 , amount      = remainder
                                 }
                         tx = Constraints.mustPayToTheScript dat (Ada.lovelaceValueOf remainder) <>
@@ -174,19 +177,34 @@ bet (BetParams theBet a) = do
 grab :: forall w s e. AsContractError e => Contract w s e ()
 grab = do
     utxos <- utxosAt scrAddress
+    pkh   <- ownPaymentPubKeyHash
+    let list = Map.toList utxos
+        utxo = head list
+        d = getDatum $ snd utxo
+        scpkh = owner d
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
-            let orefs   = fst <$> Map.toList utxos
-                lookups = Constraints.unspentOutputs utxos  <>
-                          Constraints.otherScript validator
-                tx :: TxConstraints Void Void
-                tx      = mconcat [Constraints.mustSpendScriptOutput oref unitRedeemer | oref <- orefs]
-            ledgerTx <- submitTxConstraintsWith @Void lookups tx
-            void $ awaitTxConfirmed $ getCardanoTxId ledgerTx
-            logInfo @String $ "collected gifts"
+            if scpkh == pkh
+                then do
+                    let orefs   = fst <$> Map.toList utxos
+                        lookups = Constraints.unspentOutputs utxos  <>
+                                Constraints.otherScript validator
+                        tx :: TxConstraints Void Void
+                        tx      = mconcat [Constraints.mustSpendScriptOutput oref unitRedeemer | oref <- orefs]
+                    ledgerTx <- submitTxConstraintsWith @Void lookups tx
+                    void $ awaitTxConfirmed $ getCardanoTxId ledgerTx
+                    logInfo @String $ "collected gifts"
+                else logInfo @String $ "You are not owner, you cant grab it"
 
 
+  where
+    getDatum :: ChainIndexTxOut -> TheDatum
+    getDatum o = case _ciTxOutDatum o of
+            Left  _ -> traceError "Datum does not exist"
+            Right (Datum e) -> case PlutusTx.fromBuiltinData e of
+                Nothing -> traceError "Unknown datum type"
+                Just d  -> d
 
 
 boolFromIO :: IO Bool -> Bool
@@ -221,6 +239,7 @@ myTrace = do
     h2 <- activateContractWallet w2 endpoints
 
     callEndpoint @"lock" h1 $ 90000000
+      
     void $ Emulator.waitNSlots 5
 
     callEndpoint @"bet" h2 $ BetParams
