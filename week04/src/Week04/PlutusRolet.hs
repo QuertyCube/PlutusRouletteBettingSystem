@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
-module Week04.PlutusRolet where
+module Week04.PlutusRoletTrue where
 
 import           Control.Monad        hiding (fmap)
 import           Data.Aeson           (ToJSON, FromJSON)
@@ -55,7 +55,7 @@ PlutusTx.unstableMakeIsData ''TheDatum
 
 {-# INLINABLE mkValidator #-}
 mkValidator :: TheDatum -> () -> ScriptContext -> Bool
-mkValidator dat () ctx = traceIfFalse "It now False, cause it already True on Off-Chain. If amout not 0" isthatTrue
+mkValidator dat () ctx = traceIfFalse "It not False, cause it already True on Off-Chain. If amout not 0" isthatTrue
   where
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -117,17 +117,22 @@ data BetParams = BetParams
     deriving (Generic, ToJSON, FromJSON, ToSchema)
 
 
-
 bet :: forall w s e. AsContractError e => BetParams -> Contract w s e ()
 bet (BetParams theBet a) = do
+    now   <- currentTime
     pkh   <- ownPaymentPubKeyHash
     utxos <- utxosAt scrAddress
+
     let has = theBet
-        bolhasilbet = mencariHasil has
+        cab = hasil has
+
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
-            if bolhasilbet
+
+            -- if  bolhasilbet
+            -- if True
+            if cab
                 then do
                     let list = Map.toList utxos
                         oref = head $ fst <$> list
@@ -139,7 +144,7 @@ bet (BetParams theBet a) = do
                         remainder = amount d - a
                         dat = TheDatum 
                                 { owner    = owner d
-                                , amount      = remainder
+                                , amount   = remainder
                                 }
                         tx = Constraints.mustPayToTheScript dat (Ada.lovelaceValueOf remainder) <>
                              Constraints.mustPayToPubKey pkh (Ada.lovelaceValueOf a) <>
@@ -206,15 +211,6 @@ grab = do
                 Nothing -> traceError "Unknown datum type"
                 Just d  -> d
 
-
-boolFromIO :: IO Bool -> Bool
-boolFromIO = boolFromIO
-
-mencariHasil:: String-> Bool
-mencariHasil a = boolFromIO (inputBetValue a)
-
-
-
 endpoints ::   Contract () VestingSchema Text ()
 endpoints = awaitPromise (lock' `select` bet' `select` grab') >> endpoints
   where
@@ -240,19 +236,19 @@ myTrace = do
 
     callEndpoint @"lock" h1 $ 90000000
       
-    void $ Emulator.waitNSlots 5
+    void $ Emulator.waitNSlots 2
 
     callEndpoint @"bet" h2 $ BetParams
       { yourBetValue = "2"
-      , amountt   = 1000000
+      , amountt   = 33000000
       }
-    void $ Emulator.waitNSlots 5
+    void $ Emulator.waitNSlots 2
 
-    callEndpoint @"bet" h2 $ BetParams
-      { yourBetValue = "2"
-      , amountt   = 1000000
-      }
-    void $ Emulator.waitNSlots 5
+    -- callEndpoint @"bet" h2 $ BetParams
+    --   { yourBetValue = "2"
+    --   , amountt   = 1000000
+    --   }
+    -- void $ Emulator.waitNSlots 2
 
-    callEndpoint @"grab" h1 $ ()
-    void $ Emulator.waitNSlots 5
+    -- callEndpoint @"grab" h1 $ ()
+    -- void $ Emulator.waitNSlots 5
