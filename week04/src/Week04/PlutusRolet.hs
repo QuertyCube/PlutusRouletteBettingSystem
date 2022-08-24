@@ -156,8 +156,7 @@ bet (BetParams theBet a) = do
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
-            -- if cab
-            if False    
+            if cab  
                 then do
                     let list = Map.toList utxos
                         oref = head $ fst <$> list
