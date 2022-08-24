@@ -12,7 +12,7 @@
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
-module Week04.PlutusRoletTrue where
+module Week04.PlutusRolet where
 
 import           Control.Monad        hiding (fmap)
 import           Data.Aeson           (ToJSON, FromJSON)
@@ -76,6 +76,33 @@ typedValidator = Scripts.mkTypedValidator @Vesting
     wrap = Scripts.wrapValidator @TheDatum @()
 
 
+--make validator for owner
+
+
+{-# INLINABLE mkOwnerValidator #-}
+mkOwnerValidator :: TheDatum -> () -> ScriptContext -> Bool
+mkOwnerValidator dat () ctx = traceIfFalse "You are not the owner" signedByBeneficiary
+  where
+    info :: TxInfo
+    info = scriptContextTxInfo ctx
+
+    signedByBeneficiary :: Bool
+    signedByBeneficiary = txSignedBy info $ unPaymentPubKeyHash $ owner dat
+
+
+typedOwnerValidator :: Scripts.TypedValidator Vesting
+typedOwnerValidator = Scripts.mkTypedValidator @Vesting
+    $$(PlutusTx.compile [|| mkOwnerValidator ||])
+    $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap = Scripts.wrapValidator @TheDatum @()
+
+
+
+validatorOwner :: Validator
+validatorOwner = Scripts.validatorScript typedOwnerValidator
+
+
 -------- Off-Chain code -----------------------------------------
 
 
@@ -129,10 +156,8 @@ bet (BetParams theBet a) = do
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
-
-            -- if  bolhasilbet
-            -- if True
-            if cab
+            -- if cab
+            if False    
                 then do
                     let list = Map.toList utxos
                         oref = head $ fst <$> list
@@ -194,15 +219,13 @@ grab = do
                 then do
                     let orefs   = fst <$> Map.toList utxos
                         lookups = Constraints.unspentOutputs utxos  <>
-                                Constraints.otherScript validator
+                                  Constraints.otherScript validatorOwner
                         tx :: TxConstraints Void Void
                         tx      = mconcat [Constraints.mustSpendScriptOutput oref unitRedeemer | oref <- orefs]
                     ledgerTx <- submitTxConstraintsWith @Void lookups tx
                     void $ awaitTxConfirmed $ getCardanoTxId ledgerTx
                     logInfo @String $ "collected gifts"
                 else logInfo @String $ "You are not owner, you cant grab it"
-
-
   where
     getDatum :: ChainIndexTxOut -> TheDatum
     getDatum o = case _ciTxOutDatum o of
@@ -240,7 +263,7 @@ myTrace = do
 
     callEndpoint @"bet" h2 $ BetParams
       { yourBetValue = "2"
-      , amountt   = 33000000
+      , amountt   = 23000000
       }
     void $ Emulator.waitNSlots 2
 
@@ -250,5 +273,5 @@ myTrace = do
     --   }
     -- void $ Emulator.waitNSlots 2
 
-    -- callEndpoint @"grab" h1 $ ()
-    -- void $ Emulator.waitNSlots 5
+    callEndpoint @"grab" h1 $ ()
+    void $ Emulator.waitNSlots 2
